@@ -3,8 +3,10 @@ from typing import Optional, Sequence, Tuple
 
 import numpy as np
 
-from _mls_utils import Degree, NeighborhoodMode, _eval_poly_xy, _pca_frame, _poly_design_xy, _poly_grad_xy
+from ._mls_utils import Degree, NeighborhoodMode, _eval_poly_xy, _pca_frame, _poly_design_xy, _poly_grad_xy
 from scipy.spatial import cKDTree
+
+from mls.mls import MovingLeastSquares
 
 
 @dataclass
@@ -16,7 +18,7 @@ class MLSParams:
     return_normals: bool = True
     neighborhood_mode: NeighborhoodMode = "knn"  # or "radius"
 
-class MovingLeastSquares:
+class MovingLeastSquaresCPU(MovingLeastSquares):
     """
     Moving Least Squares (MLS) smoother for 3D point clouds.
 
@@ -126,7 +128,7 @@ class MovingLeastSquares:
 
     # --------- Core per-point MLS ---------
 
-    def project_point(self, i: int) -> Tuple[np.ndarray, Optional[np.ndarray]]:
+    def project_points(self, i: int) -> Tuple[np.ndarray, Optional[np.ndarray]]:
         """
         Project point P[i] onto locally fitted surface; optionally return normal.
         """
@@ -169,7 +171,7 @@ class MovingLeastSquares:
         self._compute_local_scale()
 
         for i in range(self.N):
-            pi, ni = self.project_point(i)
+            pi, ni = self.project_points(i)
             proj[i] = pi
             if normals is not None:
                 normals[i] = ni
