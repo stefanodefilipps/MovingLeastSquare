@@ -39,3 +39,16 @@ The result is a **smoothed point cloud** with optional normals, suitable for vis
 
 ## 📂 Repository Structure
 
+mls/
+│
+├── mls_cpu.py # CPU MLS implementation (NumPy + SciPy KD-tree)
+├── mls_gpu.py # GPU MLS implementation (PyTorch + batching)
+├── _mls_utils.py # Utilities (PCA, polynomial fitting helpers)
+├── _mls_utils_torch.py
+│
+├── shapes.py # Synthetic shapes (e.g., bell-shaped surface)
+├── visualization.py # Visualization helpers (matplotlib / Open3D)
+│
+├── cli_mls.py # Command-line interface to run MLS experiments
+└── README.md # You are here
+
