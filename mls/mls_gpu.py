@@ -5,6 +5,7 @@ import torch
 from mls._mls_utils_torch import Degree, _compute_pca, _design_xy, _eval_poly, _grad_poly, _pairwise_knn_chunked, _pairwise_knn_chunked_2
 from mls.mls import MovingLeastSquares
 import time
+from scipy.spatial import cKDTree
 
 # -------------------------- parameters --------------------------
 
@@ -41,6 +42,7 @@ class MovingLeastSquaresGPU(MovingLeastSquares):
         self.N = self.P.shape[0]
         self.params = params
         self.dtype = torch.float32
+        self.tree = cKDTree(self.P.cpu().numpy())
 
     def _transform_to_local(self, Q: torch.Tensor, c: torch.Tensor, T: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
 
@@ -103,20 +105,7 @@ class MovingLeastSquaresGPU(MovingLeastSquares):
     @torch.no_grad()
     def run(self) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
         #N, P = self.N, self.P
-        k, degree, h_mult = self.params.k, self.params.degree, self.params.h_multiplier
         device = self.P.device
-
-        # # 1) Neighbors (use provided FAISS neighbors if available; else brute-force kNN)
-        # if self.params.idx is not None and self.params.d2 is not None:
-        #     idx = self.params.idx.to(device)
-        #     d2 = self.params.d2.to(device)
-        #     if idx.shape != (N, k) or d2.shape != (N, k):
-        #         raise ValueError("idx and d2 must be shaped (N,k)")
-        # else:
-        #     start = time.time()
-        #     d2, idx = _pairwise_knn_chunked(P, k=k)  # exact, chunked
-        #     end = time.time()
-        #     print(f"kNN Time: {end - start:.4f} seconds")
 
         proj = torch.empty_like(self.P)
         normals = torch.empty_like(self.P)
@@ -127,7 +116,14 @@ class MovingLeastSquaresGPU(MovingLeastSquares):
             P = self.P[s:e]  # (M,3)
             N = P.shape[0]
 
-            d2,idx = _pairwise_knn_chunked_2(self.P, P, k=k)  # exact, chunked
+            #d2,idx = _pairwise_knn_chunked_2(self.P, P, k=k)  # exact, chunked
+
+            # query neighbors
+            d2, idx = self.tree.query(P.cpu().numpy(), k=self.params.k)
+
+            # convert back to torch
+            idx = torch.from_numpy(idx).to(device=device, dtype=torch.int32)
+            d2 = torch.from_numpy(d2).to(device=device, dtype=torch.float32)
 
             # Gather neighbors: Q: (N,k,3)
             Q = self.P[idx]
@@ -147,7 +143,7 @@ class MovingLeastSquaresGPU(MovingLeastSquares):
             # 6) Project original points
             ploc = (P - c.squeeze(1)).unsqueeze(1).matmul(T).squeeze(1) # (N,3)
             x, y = ploc[...,0], ploc[...,1]
-            z = _eval_poly(coeffs, x, y, degree)                        # (N,)
+            z = _eval_poly(coeffs, x, y, self.params.degree)                        # (N,)
             proj_loc = torch.stack([x, y, z], dim=-1)                   # (N,3)
             proj_ = c.squeeze(1) + proj_loc.unsqueeze(1).matmul(T.transpose(1,2)).squeeze(1)
 
